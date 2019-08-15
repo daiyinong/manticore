@@ -1,7 +1,7 @@
 import copy
 import logging
 
-from .smtlib import solver, Bool, issymbolic
+from .smtlib import solver, Bool, issymbolic, calculate_probability
 from ..utils.event import Eventful
 
 logger = logging.getLogger(__name__)
@@ -79,6 +79,7 @@ class StateBase(Eventful):
         super().__init__(**kwargs)
         self._platform = platform
         self._constraints = constraints
+        self._probability = 1.0
         self._platform.constraints = constraints
         self._input_symbols = list()
         self._child = None
@@ -167,6 +168,12 @@ class StateBase(Eventful):
         """
         constraint = self.migrate_expression(constraint)
         self._constraints.add(constraint)
+        self._probability = self._probability * calculate_probability(constraint)
+        print("probability so far: " + str(self._probability))
+
+    @property
+    def probability(self):
+        return self._probability
 
     def abandon(self):
         """Abandon the currently-active state.

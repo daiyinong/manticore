@@ -233,6 +233,9 @@ class BoolNot(BoolOperation):
     def __init__(self, value, **kwargs):
         super().__init__(value, **kwargs)
 
+    def __invert__(self):
+        return self.operands[0]
+
 
 class BoolEq(BoolOperation):
     def __init__(self, a, b, **kwargs):
@@ -583,13 +586,27 @@ class LessThan(BoolOperation):
     def __init__(self, a, b, *args, **kwargs):
         super().__init__(a, b, *args, **kwargs)
 
+    def __invert__(self):
+        return GreaterOrEqual(self.operands[0], self.operands[1])
 
 class LessOrEqual(BoolOperation):
     def __init__(self, a, b, *args, **kwargs):
         super().__init__(a, b, *args, **kwargs)
 
+    def __invert__(self):
+        return GreaterThan(self.operands[0], self.operands[1])
+
 
 class Equal(BoolOperation):
+    def __init__(self, a, b, *args, **kwargs):
+        assert a.size == b.size
+        super().__init__(a, b, *args, **kwargs)
+
+    def __invert__(self):
+        return Unequal(self.operands[0], self.operands[1])
+
+
+class Unequal(BoolOperation):
     def __init__(self, a, b, *args, **kwargs):
         assert a.size == b.size
         super().__init__(a, b, *args, **kwargs)
@@ -600,11 +617,17 @@ class GreaterThan(BoolOperation):
         assert a.size == b.size
         super().__init__(a, b, *args, **kwargs)
 
+    def __invert__(self):
+        return LessOrEqual(self.operands[0], self.operands[1])
+
 
 class GreaterOrEqual(BoolOperation):
     def __init__(self, a, b, *args, **kwargs):
         assert a.size == b.size
         super().__init__(a, b, *args, **kwargs)
+
+    def __invert__(self):
+        return LessThan(self.operands[0], self.operands[1])
 
 
 class UnsignedLessThan(BoolOperation):
@@ -612,11 +635,17 @@ class UnsignedLessThan(BoolOperation):
         super().__init__(a, b, *args, **kwargs)
         assert a.size == b.size
 
+    def __invert__(self):
+        return UnsignedGreaterOrEqual(self.operands[0], self.operands[1])
+
 
 class UnsignedLessOrEqual(BoolOperation):
     def __init__(self, a, b, *args, **kwargs):
         assert a.size == b.size
         super().__init__(a, b, *args, **kwargs)
+
+    def __invert__(self):
+        return UnsignedGreaterThan(self.operands[0], self.operands[1])
 
 
 class UnsignedGreaterThan(BoolOperation):
@@ -624,11 +653,17 @@ class UnsignedGreaterThan(BoolOperation):
         assert a.size == b.size
         super().__init__(a, b, *args, **kwargs)
 
+    def __invert__(self):
+        return UnsignedLessOrEqual(self.operands[0], self.operands[1])
+
 
 class UnsignedGreaterOrEqual(BoolOperation):
     def __init__(self, a, b, *args, **kwargs):
         assert a.size == b.size
         super(UnsignedGreaterOrEqual, self).__init__(a, b, *args, **kwargs)
+
+    def __invert__(self):
+        return UnsignedLessThan(self.operands[0], self.operands[1])
 
 
 ###############################################################################
@@ -1193,3 +1228,12 @@ class BitVecITE(BitVecOperation):
         assert true_value.size == size
         assert false_value.size == size
         super().__init__(size, condition, true_value, false_value, *args, **kwargs)
+
+    def transform(self):
+        condition = self.operands[0]
+        true_value = self.operands[1]
+        false_value = self.operands[2]
+
+        and1 = BoolAnd(condition, true_value)
+        and2 = BoolAnd(~condition, false_value)
+        return BoolOr(and1, and2)

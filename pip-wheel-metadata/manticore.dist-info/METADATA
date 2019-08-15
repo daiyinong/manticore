@@ -1,0 +1,42 @@
+Metadata-Version: 2.1
+Name: manticore
+Version: 0.3.0
+Summary: Manticore is a symbolic execution tool for analysis of binaries and smart contracts.
+Home-page: https://github.com/trailofbits/manticore
+Author: Trail of Bits
+License: UNKNOWN
+Platform: UNKNOWN
+Requires-Python: >=3.6
+Requires-Dist: pyyaml
+Requires-Dist: wrapt
+Requires-Dist: pysha3
+Requires-Dist: prettytable
+Requires-Dist: pyevmasm (==0.2.0)
+Requires-Dist: rlp
+Requires-Dist: ply
+Requires-Dist: z3-solver
+Provides-Extra: dev
+Requires-Dist: capstone (==4.0.1) ; extra == 'dev'
+Requires-Dist: pyelftools ; extra == 'dev'
+Requires-Dist: unicorn ; extra == 'dev'
+Requires-Dist: keystone-engine ; extra == 'dev'
+Requires-Dist: coverage ; extra == 'dev'
+Requires-Dist: nose ; extra == 'dev'
+Requires-Dist: Sphinx ; extra == 'dev'
+Provides-Extra: dev-noks
+Requires-Dist: capstone (==4.0.1) ; extra == 'dev-noks'
+Requires-Dist: pyelftools ; extra == 'dev-noks'
+Requires-Dist: unicorn ; extra == 'dev-noks'
+Requires-Dist: coverage ; extra == 'dev-noks'
+Requires-Dist: nose ; extra == 'dev-noks'
+Requires-Dist: Sphinx ; extra == 'dev-noks'
+Provides-Extra: native
+Requires-Dist: capstone (==4.0.1) ; extra == 'native'
+Requires-Dist: pyelftools ; extra == 'native'
+Requires-Dist: unicorn ; extra == 'native'
+Provides-Extra: redis
+Requires-Dist: redis ; extra == 'redis'
+
+UNKNOWN
+
+

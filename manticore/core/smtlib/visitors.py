@@ -125,6 +125,7 @@ class Translator(Visitor):
 
     def _method(self, expression, *args):
         # Special case. Need to get the unsleeved version of the array
+        #print(expression)
         if isinstance(expression, ArrayProxy):
             expression = expression.array
         assert expression.__class__.__mro__[-1] is object
@@ -135,7 +136,7 @@ class Translator(Visitor):
                 value = getattr(self, methodname)(expression, *args)
                 if value is not None:
                     return value
-        raise Exception(f"No translation for this {expression}")
+        return expression
 
 
 class GetDeclarations(Visitor):
@@ -276,6 +277,7 @@ class ConstantFolderSimplifier(Visitor):
         LessThan: operator.__lt__,
         LessOrEqual: operator.__le__,
         Equal: operator.__eq__,
+        Unequal: operator.__ne__,
         GreaterThan: operator.__gt__,
         GreaterOrEqual: operator.__ge__,
         BoolAnd: operator.__and__,
@@ -654,6 +656,7 @@ class TranslatorSmtlib(Translator):
         self._bindings_cache = {}
         self._bindings = []
 
+
     def _add_binding(self, expression, smtlib):
         if not self.use_bindings or len(smtlib) <= 10:
             return smtlib
@@ -760,6 +763,246 @@ class TranslatorSmtlib(Translator):
 
 def translate_to_smtlib(expression, **kwargs):
     translator = TranslatorSmtlib(**kwargs)
+    translator.visit(expression)
+    return translator.result
+
+class TranslatorIsl(Translator):
+    """ Simple visitor to translate an expression to its isl representation
+    """
+
+    unique = 0
+
+    def __init__(self, use_bindings=False, *args, **kw):
+        assert "bindings" not in kw
+        super().__init__(*args, **kw)
+        self.use_bindings = use_bindings
+        self._bindings_cache = {}
+        self._bindings = []
+        self._isl_constraints = []
+        self._isl_variables = set()
+
+    def visit(self, node, use_fixed_point=False):
+        """
+        The entry point of the visitor.
+        The exploration algorithm is a DFS in-order traversal
+        The implementation used three stacks instead of a recursion
+        The final result is store in self.result
+
+        :param node: Node to explore
+        :type node: Expression
+        :param use_fixed_point: if True, it runs _methods until a fixed point is found
+        :type use_fixed_point: Bool
+        """
+        cache = self._cache
+        visited = set()
+        processed = set()
+        stack = []
+        stack.append(node)
+        while stack:
+            node = stack.pop()
+            if node in cache:
+                self.push(cache[node])
+            elif isinstance(node, Equal) and isinstance(node.operands[0], BitVecITE) and isinstance(node.operands[1], BitVecConstant):
+                ite_node = node.operands[0]
+                const_node = node.operands[1]
+                if ite_node.operands[1] == const_node:
+                    new_node = ite_node.operands[0]
+                else:
+                    new_node = ~(ite_node.operands[0])
+                stack.append(new_node)
+                processed.add(node)
+            elif isinstance(node, Unequal) and isinstance(node.operands[0], BitVecITE) and isinstance(node.operands[1], BitVecConstant):
+                ite_node = node.operands[0]
+                const_node = node.operands[1]
+                if ite_node.operands[1] == const_node:
+                    new_node = ~ite_node.operands[0]
+                else:
+                    new_node = ite_node.operands[0]
+                stack.append(new_node)
+                processed.add(node)
+            elif isinstance(node, BitVecITE) and not (node in processed):
+                stack.append(node)
+                processed.add(node)
+            elif isinstance(node, BoolEq) and isinstance(node.operands[1], BoolConstant):
+                expression_node = node.operands[0]
+                bool_const_node = node.operands[1]
+                if bool_const_node.value == True:
+                    stack.append(expression_node)
+                else:
+                    stack.append(~expression_node)
+                processed.add(node)
+            elif isinstance(node, BoolNot) and not (node in visited) and isinstance(node.operands[0], BoolNot):
+                stack.append(node.operands[0].operands[0])
+            elif isinstance(node, BoolNot) and not (node in visited) and not (node in processed):
+                operand = node.operands[0]
+                if not isinstance(operand, BoolOperation) or isinstance(~operand, BoolNot):
+                    processed.add(node)
+                    stack.append(node)
+                else:
+                    processed.add(node)
+                    stack.append(~operand)
+            elif isinstance(node, Operation):
+                if node in visited:
+                    operands = [self.pop() for _ in range(len(node.operands))]
+                    value = self._method(node, *operands)
+
+                    visited.remove(node)
+                    self.push(value)
+                    cache[node] = value
+                else:
+                    visited.add(node)
+                    stack.append(node)
+                    stack.extend(node.operands)
+            else:
+                self.push(self._method(node))
+
+        if use_fixed_point:
+            old_value = None
+            new_value = self.pop()
+            while old_value is not new_value:
+                self.visit(new_value)
+                old_value = new_value
+                new_value = self.pop()
+            self.push(new_value)
+
+    def _add_binding(self, expression, smtlib):
+        if not self.use_bindings:
+            return smtlib
+
+        if smtlib in self._bindings_cache:
+            return self._bindings_cache[smtlib]
+
+        TranslatorSmtlib.unique += 1
+        name = "a_%d" % TranslatorSmtlib.unique
+
+        self._bindings.append((name, expression, smtlib))
+        self._isl_variables.add(name)
+        self._bindings_cache[expression] = name
+        return name
+
+    @property
+    def bindings(self):
+        return self._bindings
+
+    @property
+    def isl_constraints(self):
+        return self._isl_constraints
+
+    @property
+    def isl_variables(self):
+        return self._isl_variables
+
+    translation_table = {
+        BoolNot: "NOT",
+        BoolEq: "=",
+        BoolAnd: "&&",
+        BoolOr: "||",
+        BoolXor: "^",
+        BoolITE: "blite",
+        BitVecAdd: "+",
+        BitVecSub: "-",
+        BitVecMul: "*",
+        BitVecDiv: "/",
+        BitVecUnsignedDiv: "/",
+        BitVecMod: "%",
+        BitVecRem: "%",
+        BitVecUnsignedRem: "%",
+        BitVecShiftLeft: "<<",
+        BitVecShiftRight: ">>",
+        BitVecArithmeticShiftLeft: "<<",
+        BitVecArithmeticShiftRight: ">>",
+        BitVecAnd: "-",
+        BitVecOr: "-",
+        BitVecXor: "-",
+        BitVecNot: "!",
+        BitVecNeg: "-",
+        LessThan: "<",
+        LessOrEqual: "<=",
+        Equal: "=",
+        Unequal: "!=",
+        GreaterThan: ">",
+        GreaterOrEqual: ">=",
+        UnsignedLessThan: "<",
+        UnsignedLessOrEqual: "<=",
+        UnsignedGreaterThan: ">",
+        UnsignedGreaterOrEqual: ">=",
+        BitVecSignExtend: "(_ sign_extend %d)",
+        BitVecZeroExtend: "(_ zero_extend %d)",
+        BitVecExtract: "(_ extract %d %d)",
+        BitVecConcat: "concat",
+        BitVecITE: "bvite",
+        ArrayStore: "store",
+        ArraySelect: "select",
+    }
+
+    def visit_BitVecConstant(self, expression):
+        return expression.value
+
+    def visit_BoolConstant(self, expression):
+        return expression.value and "true" or "false"
+
+    def visit_Variable(self, expression):
+        self.isl_variables.add(expression.name)
+        return expression.name
+
+    def visit_BitVecConcat(self, expression, *operands):
+        buffer_name = operands[0].split(" ")[1]
+        self.isl_variables.add(buffer_name)
+        return buffer_name
+
+    def visit_ArraySelect(self, expression, *operands):
+        array_smt, index_smt = operands
+        if isinstance(expression.array, ArrayStore):
+            array_smt = self._add_binding(expression.array, array_smt)
+
+        return "(select %s %s)" % (array_smt, index_smt)
+
+    def visit_BitVecITE(self, expression, *operands):
+        # FIXME Enable some taint propagating optimization
+        if isinstance(expression.operands[0], Constant) and not expression.operands[0].taint:
+            if expression.operands[0].value:
+                result = expression.operands[1]
+            else:
+                result = expression.operands[2]
+            return result
+
+    def visit_Operation(self, expression, *operands):
+        operation = self.translation_table[type(expression)]
+        if isinstance(expression, (BitVecSignExtend, BitVecZeroExtend)):
+            operation = operation % expression.extend
+        elif isinstance(expression, BitVecExtract):
+            operation = operation % (expression.end, expression.begining)
+
+        try:
+            operands = [self._add_binding(*x) for x in zip(expression.operands, operands)]
+            if len(operands) == 2:
+                self.isl_constraints.append((operands[0], operation, operands[1]))
+                return "(%s %s %s)" % (operands[0], operation, operands[1])
+            else:
+                self.isl_constraints.append((operation, operands))
+                return "(%s %s)" % (operation, " ".join(operands))
+        except:
+            print("no!!")
+
+
+    def visit_Constant(self, expression):
+        return expression.value
+
+    @property
+    def results(self):
+        raise Exception("NOOO")
+
+    @property
+    def result(self):
+        output = super().result
+        if self.use_bindings:
+            for name, expr, smtlib in reversed(self._bindings):
+                output = "( let ((%s %s)) %s )" % (name, smtlib, output)
+        return output
+
+
+def translate_to_isl(expression, **kwargs):
+    translator = TranslatorIsl(**kwargs)
     translator.visit(expression)
     return translator.result
 
