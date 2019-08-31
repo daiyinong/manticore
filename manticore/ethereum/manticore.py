@@ -14,6 +14,9 @@ import random
 import re
 import sha3
 import tempfile
+from scipy import stats
+import matplotlib.pyplot as plt
+
 
 from ..core.manticore import ManticoreBase
 from ..core.smtlib import (
@@ -1667,6 +1670,36 @@ class ManticoreEVM(ManticoreBase):
                 if md is not None and len(md.warnings) > 0:
                     global_summary.write("\n\nCompiler warnings for %s:\n" % md.name)
                     global_summary.write(md.warnings)
+
+            global_summary.write("\n")
+            global_summary.write("Gas consumption probabilities: \n")
+
+            states = list(self.all_states)
+            consumptions = []
+            probabilities = []
+
+            for state in states:
+                global_summary.write("state %s: probability %s, gas consumption %s\n" % (state.id, state.probability, state.consumption))
+                consumptions.append(state.consumption)
+                probabilities.append(state.probability)
+            consumptions = tuple(consumptions)
+            probabilities = tuple(probabilities)
+
+            dist = stats.rv_discrete(name='dist', values=(consumptions, probabilities))
+
+            logger.info("Mean consumption: " + str(dist.mean(100)))
+            logger.info("Consumption standard variation: " + str(dist.std(100)))
+
+            fig, ax = plt.subplots(1, 1)
+            ax.plot(consumptions, dist.pmf(consumptions), 'ro', ms=12, mec='r')
+            ax.vlines(consumptions, 0, dist.pmf(consumptions), colors='r', lw=4)
+            plt.title("Consumption Distribution of Contract")
+            plt.xlabel("Gas")
+            plt.ylabel("P(Consumption=Gas)")
+            plt.show()
+
+            global_summary.write("Mean consumption: " + str(dist.mean(100)))
+            global_summary.write("Consumption standard variation: " + str(dist.std(100)))
 
         for address, md in self.metadata.items():
             with self._output.save_stream("global_%s.sol" % md.name) as global_src:

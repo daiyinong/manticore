@@ -203,7 +203,7 @@ class Bool(Expression):
         return BoolXor(self.cast(other), self)
 
     def __bool__(self):
-        raise NotImplementedError("__bool__ for Bool")
+        return self
 
 
 class BoolVariable(Bool, Variable):
@@ -927,6 +927,9 @@ class ArrayStore(ArrayOperation):
     def value(self):
         return self.operands[2]
 
+    def __repr__(self):
+        return self.operands[0].name
+
 
 class ArraySlice(Array):
     def __init__(self, array, offset, size, *args, **kwargs):
@@ -1211,6 +1214,14 @@ class BitVecExtract(BitVecOperation):
     @property
     def end(self):
         return self._end
+
+    def __repr__(self):
+        buffer_name = "var1"
+        if type(self.operands[0]) is int:
+            buffer_name = "var" + str(self.operands[0])
+        elif type(self.operands[0]) is str:
+            buffer_name = self.operands[0].split(" ")[0][1:]
+        return buffer_name
 
 
 class BitVecConcat(BitVecOperation):

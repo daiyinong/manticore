@@ -646,7 +646,9 @@ class ManticoreBase(Eventful):
         for p in self.plugins:
             p.generate_testcase(state, testcase, message)
 
-        logger.info("Generated testcase No. %d - %s", testcase.num, message)
+        logger.info("Generated testcase No. %d - %s, probability: %g, consumption: %d", testcase.num, message,
+                    state.probability, state.consumption)
+
         return testcase
 
     @at_not_running

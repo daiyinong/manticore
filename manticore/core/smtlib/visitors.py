@@ -781,6 +781,19 @@ class TranslatorIsl(Translator):
         self._isl_constraints = []
         self._isl_variables = set()
 
+    def _is_simplifiable(self, node):
+        if type(node) not in [Equal, Unequal]:
+            return False
+
+        operand_ite = node.operands[0]
+        operand_const = node.operands[1]
+        result = True
+        result = result and isinstance(operand_ite, BitVecITE)
+        result = result and isinstance(operand_const, BitVecConstant)
+        result = result and isinstance(operand_ite.operands[1], BitVecConstant)
+        result = result and isinstance(operand_ite.operands[2], BitVecConstant)
+        return result
+
     def visit(self, node, use_fixed_point=False):
         """
         The entry point of the visitor.
@@ -802,7 +815,7 @@ class TranslatorIsl(Translator):
             node = stack.pop()
             if node in cache:
                 self.push(cache[node])
-            elif isinstance(node, Equal) and isinstance(node.operands[0], BitVecITE) and isinstance(node.operands[1], BitVecConstant):
+            elif self._is_simplifiable(node) and isinstance(node, Equal):
                 ite_node = node.operands[0]
                 const_node = node.operands[1]
                 if ite_node.operands[1] == const_node:
@@ -811,7 +824,7 @@ class TranslatorIsl(Translator):
                     new_node = ~(ite_node.operands[0])
                 stack.append(new_node)
                 processed.add(node)
-            elif isinstance(node, Unequal) and isinstance(node.operands[0], BitVecITE) and isinstance(node.operands[1], BitVecConstant):
+            elif self._is_simplifiable(node) and isinstance(node, Unequal):
                 ite_node = node.operands[0]
                 const_node = node.operands[1]
                 if ite_node.operands[1] == const_node:
@@ -893,10 +906,10 @@ class TranslatorIsl(Translator):
         return self._isl_variables
 
     translation_table = {
-        BoolNot: "NOT",
+        BoolNot: "not",
         BoolEq: "=",
-        BoolAnd: "&&",
-        BoolOr: "||",
+        BoolAnd: "and",
+        BoolOr: "or",
         BoolXor: "^",
         BoolITE: "blite",
         BitVecAdd: "+",
@@ -907,11 +920,11 @@ class TranslatorIsl(Translator):
         BitVecMod: "%",
         BitVecRem: "%",
         BitVecUnsignedRem: "%",
-        BitVecShiftLeft: "<<",
-        BitVecShiftRight: ">>",
-        BitVecArithmeticShiftLeft: "<<",
-        BitVecArithmeticShiftRight: ">>",
-        BitVecAnd: "-",
+        BitVecShiftLeft: "bitops",
+        BitVecShiftRight: "bitops",
+        BitVecArithmeticShiftLeft: "bitops",
+        BitVecArithmeticShiftRight: "bitops",
+        BitVecAnd: "+",
         BitVecOr: "-",
         BitVecXor: "-",
         BitVecNot: "!",
@@ -926,9 +939,9 @@ class TranslatorIsl(Translator):
         UnsignedLessOrEqual: "<=",
         UnsignedGreaterThan: ">",
         UnsignedGreaterOrEqual: ">=",
-        BitVecSignExtend: "(_ sign_extend %d)",
-        BitVecZeroExtend: "(_ zero_extend %d)",
-        BitVecExtract: "(_ extract %d %d)",
+        BitVecSignExtend: "bitops",
+        BitVecZeroExtend: "bitops",
+        BitVecExtract: "bitops",
         BitVecConcat: "concat",
         BitVecITE: "bvite",
         ArrayStore: "store",
@@ -946,7 +959,21 @@ class TranslatorIsl(Translator):
         return expression.name
 
     def visit_BitVecConcat(self, expression, *operands):
-        buffer_name = operands[0].split(" ")[1]
+        try:
+            if expression is not None:
+                buffer_name = operands[0].split("[")[0]
+                self.isl_variables.add(buffer_name)
+                return buffer_name
+        except IndexError:
+            return ""
+        return ""
+
+    def visit_BitVecExtract(self, expression, *operands):
+        buffer_name = "default"
+        if type(operands[0]) is int:
+            buffer_name = "var" + str(operands[0])
+        elif type(operands[0]) is str:
+            buffer_name = operands[0].split(" ")[0][1:]
         self.isl_variables.add(buffer_name)
         return buffer_name
 
@@ -954,11 +981,21 @@ class TranslatorIsl(Translator):
         array_smt, index_smt = operands
         if isinstance(expression.array, ArrayStore):
             array_smt = self._add_binding(expression.array, array_smt)
+        if not isinstance(array_smt, str):
+            array_smt = array_smt.name
 
-        return "(select %s %s)" % (array_smt, index_smt)
+        return array_smt
+
+    def visit_ArrayStore(self, expression, *operands):
+        array_smt = operands[0]
+        if isinstance(expression.array, ArrayStore):
+            array_smt = self._add_binding(expression.array, array_smt)
+        if not isinstance(array_smt, str):
+            array_smt = array_smt.name
+
+        return array_smt
 
     def visit_BitVecITE(self, expression, *operands):
-        # FIXME Enable some taint propagating optimization
         if isinstance(expression.operands[0], Constant) and not expression.operands[0].taint:
             if expression.operands[0].value:
                 result = expression.operands[1]
@@ -978,10 +1015,12 @@ class TranslatorIsl(Translator):
             if len(operands) == 2:
                 self.isl_constraints.append((operands[0], operation, operands[1]))
                 return "(%s %s %s)" % (operands[0], operation, operands[1])
+            elif isinstance(expression, BitVecITE):
+                return operands[1]
             else:
                 self.isl_constraints.append((operation, operands))
-                return "(%s %s)" % (operation, " ".join(operands))
-        except:
+                return "(%s %s)" % (operation, " ".join(str(operand) for operand in operands))
+        except Exception:
             print("no!!")
 
 

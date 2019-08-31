@@ -94,9 +94,10 @@ def ethereum_main(args, logger):
         if m.plugins:
             logger.info(f'Registered plugins: {", ".join(d.name for d in m.plugins)}')
 
-        logger.info("Beginning analysis")
+        logger.info("Beginning analysis 1")
 
         with m.kill_timeout():
+            print("1")
             m.multi_tx_analysis(
                 args.argv[0],
                 contract_name=args.contract,

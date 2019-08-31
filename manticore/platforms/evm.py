@@ -928,7 +928,7 @@ class EVM(Eventful):
             raise StackUnderflow()
         return self.stack.pop()
 
-    def _consume(self, fee):
+    def _consume(self, fee, state=None):
         # Check type and bitvec size
         if isinstance(fee, int):
             if fee > (1 << 512) - 1:
@@ -956,6 +956,17 @@ class EVM(Eventful):
                 self._gas -= fee
                 self._mgas = reps, m - fee
                 return
+        concretized_fee = fee
+        if issymbolic(fee):
+            fees = Z3Solver.instance().get_all_values(self.constraints, fee)
+            if consts.oog in ("pedantic", "complete", "concrete"):
+                concretized_fee = sum(fees) / len(fees)
+            elif consts.oog == "optimistic":
+                concretized_fee = min(fees)
+            elif consts.oog == "pessmistic":
+                concretized_fee = max(fees)
+        else:
+            concretized_fee = fee
 
         if consts.oog in ("pedantic", "complete"):
             # gas is faithfully accounted and ogg checked at instruction/BB level.
@@ -1020,6 +1031,8 @@ class EVM(Eventful):
             # do nothing. gas is not even changed
             return
         self._gas = simplify(self._gas - fee)
+        if state is not None:
+            state.consume(concretized_fee)
 
         # If everything is concrete lets just check at every instruction
         if not issymbolic(self._gas) and self._gas < 0:
@@ -1085,7 +1098,7 @@ class EVM(Eventful):
             raise TerminateState(f"Instruction not implemented {current.semantics}", testcase=True)
         return implementation(*arguments)
 
-    def _checkpoint(self):
+    def _checkpoint(self, state=None):
         """Save and/or get a state checkpoint previous to current instruction"""
         # Fixme[felipe] add a with self.disabled_events context manager to Eventful
         if self._checkpoint_data is None:
@@ -1106,7 +1119,7 @@ class EVM(Eventful):
             fee = self._calculate_gas(*arguments)
 
             self._checkpoint_data = (pc, old_gas, instruction, arguments, fee, allocated)
-            self._consume(fee)
+            self._consume(fee, state)
 
         return self._checkpoint_data
 
@@ -1185,7 +1198,7 @@ class EVM(Eventful):
             assert result is None
 
     # Execute an instruction from current pc
-    def execute(self):
+    def execute(self, state=None):
         pc = self.pc
         if issymbolic(pc) and not isinstance(pc, Constant):
             expression = pc
@@ -1207,7 +1220,7 @@ class EVM(Eventful):
             # a = time.time()
             self._check_jmpdest()
             # b = time.time()
-            last_pc, last_gas, instruction, arguments, fee, allocated = self._checkpoint()
+            last_pc, last_gas, instruction, arguments, fee, allocated = self._checkpoint(state)
             # c = time.time()
             # d = time.time()
             result = self._handler(*arguments)
@@ -2208,6 +2221,7 @@ class EVMWorld(Platform):
             Tuple[Transaction, List[EVMLog], Set[int], Union[bytearray, ArrayProxy], EVM]
         ] = []
         self._deleted_accounts: Set[int] = set()
+        self._relevant_states = []
         self._logs: List[EVMLog] = list()
         self._pending_transaction = None
         self._transactions: List[Transaction] = list()
@@ -2674,13 +2688,13 @@ class EVMWorld(Platform):
             new_address = int(sha3.keccak_256(rlp.encode([sender, nonce])).hexdigest()[24:], 16)
         return new_address
 
-    def execute(self):
+    def execute(self, state=None):
 
         self._process_pending_transaction()
         if self.current_vm is None:
             raise TerminateState("Trying to execute an empty transaction", testcase=False)
         try:
-            self.current_vm.execute()
+            self.current_vm.execute(state)
         except StartTx:
             pass
         except EndTx as ex:

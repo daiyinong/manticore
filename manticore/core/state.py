@@ -75,11 +75,12 @@ class StateBase(Eventful):
     :ivar dict context: Local context for arbitrary data storage
     """
 
-    def __init__(self, constraints, platform, **kwargs):
+    def __init__(self, constraints, platform, probability=1.0, consumption=0.0, **kwargs):
         super().__init__(**kwargs)
         self._platform = platform
         self._constraints = constraints
-        self._probability = 1.0
+        self._probability = probability
+        self._consumption = consumption
         self._platform.constraints = constraints
         self._input_symbols = list()
         self._child = None
@@ -95,6 +96,8 @@ class StateBase(Eventful):
         state["input_symbols"] = self._input_symbols
         state["child"] = self._child
         state["context"] = self._context
+        state["probability"] = self._probability
+        state["consumption"] = self._consumption
         return state
 
     def __setstate__(self, state):
@@ -104,6 +107,8 @@ class StateBase(Eventful):
         self._input_symbols = state["input_symbols"]
         self._child = state["child"]
         self._context = state["context"]
+        self._probability = state["probability"]
+        self._consumption = state["consumption"]
         # 33
         # Events are lost in serialization and fork !!
         self.forward_events_from(self._platform)
@@ -125,6 +130,8 @@ class StateBase(Eventful):
         new_state._input_symbols = list(self._input_symbols)
         new_state._context = copy.copy(self._context)
         new_state._id = None
+        new_state._probability = self.probability
+        new_state._consumption = self.consumption
         self.copy_eventful_state(new_state)
 
         self._child = new_state
@@ -168,12 +175,20 @@ class StateBase(Eventful):
         """
         constraint = self.migrate_expression(constraint)
         self._constraints.add(constraint)
-        self._probability = self._probability * calculate_probability(constraint)
-        print("probability so far: " + str(self._probability))
+        self._probability *= calculate_probability(constraint)
+
+        logger.debug("probability so far: " + str(self._probability))
 
     @property
     def probability(self):
         return self._probability
+
+    @property
+    def consumption(self):
+        return self._consumption
+
+    def consume(self, fee):
+        self._consumption += fee
 
     def abandon(self):
         """Abandon the currently-active state.
@@ -272,6 +287,10 @@ class StateBase(Eventful):
                 )
         elif policy == "ONE":
             vals = [self._solver.get_value(self._constraints, symbolic)]
+        elif policy == "RL":
+            vals = []
+        elif policy == "MCTS":
+            vals = []
         else:
             assert policy == "ALL"
             vals = self._solver.get_all_values(
