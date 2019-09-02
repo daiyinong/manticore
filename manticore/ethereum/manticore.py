@@ -428,7 +428,7 @@ class ManticoreEVM(ManticoreBase):
     def get_account(self, name):
         return self._accounts[name]
 
-    def __init__(self, workspace_url: str = None, policy: str = "random", policy_dict =  None):
+    def __init__(self, workspace_url: str = None, policy: str = "random", policy_dict = None):
         """
         A Manticore EVM manager
         :param workspace_url: workspace folder name
@@ -453,7 +453,7 @@ class ManticoreEVM(ManticoreBase):
         self.constraints = constraints
         self.detectors = {}
         self.metadata: Dict[int, SolidityMetadata] = {}
-        self.policy_dict = dict()
+        self.policy_dict = policy_dict
 
         # The following should go to manticore.context so we can use multiprocessing
         with self.locked_context("ethereum", dict) as context:
@@ -1691,8 +1691,10 @@ class ManticoreEVM(ManticoreBase):
                 state_ids.append(state.id)
                 consumptions.append(state.consumption)
                 probabilities.append(state.probability)
-
-            probabilities = [p / sum(probabilities) for p in probabilities]
+            try:
+                probabilities = [p / sum(probabilities) for p in probabilities]
+            except ZeroDivisionError:
+                probabilities = [1.0]
             for i in range(len(state_ids)):
                 global_summary.write("state %s: probability %s, gas consumption %s\n" % (state_ids[i], probabilities[i], consumptions[i]))
             probabilities = tuple(probabilities)
