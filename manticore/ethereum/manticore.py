@@ -428,7 +428,7 @@ class ManticoreEVM(ManticoreBase):
     def get_account(self, name):
         return self._accounts[name]
 
-    def __init__(self, workspace_url: str = None, policy: str = "random"):
+    def __init__(self, workspace_url: str = None, policy: str = "random", policy_dict =  None):
         """
         A Manticore EVM manager
         :param workspace_url: workspace folder name
@@ -440,6 +440,7 @@ class ManticoreEVM(ManticoreBase):
         world = evm.EVMWorld(constraints)
         initial_state = State(constraints, world)
         super().__init__(initial_state, workspace_url=workspace_url, policy=policy)
+        initial_state._id = self._workspace.save_state(initial_state)
         self.subscribe("will_terminate_state", self._terminate_state_callback)
         self.subscribe("did_evm_execute_instruction", self._did_evm_execute_instruction_callback)
         self.subscribe("did_read_code", self._did_evm_read_code)
@@ -452,6 +453,7 @@ class ManticoreEVM(ManticoreBase):
         self.constraints = constraints
         self.detectors = {}
         self.metadata: Dict[int, SolidityMetadata] = {}
+        self.policy_dict = dict()
 
         # The following should go to manticore.context so we can use multiprocessing
         with self.locked_context("ethereum", dict) as context:
@@ -662,6 +664,9 @@ class ManticoreEVM(ManticoreBase):
         if not self.count_ready_states() or len(self.get_code(contract_account)) == 0:
             return None
         return contract_account
+
+    def reset(self, workspace_url=None, policy="random"):
+        self.__init__(workspace_url, policy)
 
     def solidity_create_contract(
         self,
@@ -1334,6 +1339,9 @@ class ManticoreEVM(ManticoreBase):
         state.context["last_exception"] = e
         e.testcase = False  # Do not generate a testcase file
 
+        with self.locked_context('gas_dict', dict) as gas_dict:
+            gas_dict[state.id] = state.addt_gas
+
         if not world.all_transactions:
             logger.debug("Something went wrong: search terminated in the middle of an ongoing tx")
             return
@@ -1675,15 +1683,20 @@ class ManticoreEVM(ManticoreBase):
             global_summary.write("Gas consumption probabilities: \n")
 
             states = list(self.all_states)
+            state_ids = []
             consumptions = []
             probabilities = []
 
             for state in states:
-                global_summary.write("state %s: probability %s, gas consumption %s\n" % (state.id, state.probability, state.consumption))
+                state_ids.append(state.id)
                 consumptions.append(state.consumption)
                 probabilities.append(state.probability)
-            consumptions = tuple(consumptions)
+
+            probabilities = [p / sum(probabilities) for p in probabilities]
+            for i in range(len(state_ids)):
+                global_summary.write("state %s: probability %s, gas consumption %s\n" % (state_ids[i], probabilities[i], consumptions[i]))
             probabilities = tuple(probabilities)
+            consumptions = tuple(consumptions)
 
             dist = stats.rv_discrete(name='dist', values=(consumptions, probabilities))
 

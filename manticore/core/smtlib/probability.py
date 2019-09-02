@@ -31,7 +31,7 @@ def calculate_probability(expression):
     set_string = "{[" + variable_string + "] : " + range_string + "}"
     domain = isl.Set(set_string)
     constraint = "{[" + variable_string + "] : " + constraint_string + "}"
-    logger.warning("isl constraint: " + constraint)
+    logger.debug("isl constraint: " + constraint)
 
     if "bitops" in constraint:
         return 1.0

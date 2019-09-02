@@ -68,7 +68,8 @@ def choose_detectors(args):
 
 
 def ethereum_main(args, logger):
-    m = ManticoreEVM(workspace_url=args.workspace)
+    policy = args.policy
+    m = ManticoreEVM(workspace_url=args.workspace, policy=policy)
     with WithKeyboardInterruptAs(m.kill):
 
         if args.verbose_trace:
@@ -94,19 +95,41 @@ def ethereum_main(args, logger):
         if m.plugins:
             logger.info(f'Registered plugins: {", ".join(d.name for d in m.plugins)}')
 
-        logger.info("Beginning analysis 1")
+        logger.info("Beginning analysis")
 
-        with m.kill_timeout():
-            print("1")
-            m.multi_tx_analysis(
-                args.argv[0],
-                contract_name=args.contract,
-                tx_limit=args.txlimit,
-                tx_use_coverage=not args.txnocoverage,
-                tx_send_ether=not args.txnoether,
-                tx_account=args.txaccount,
-                tx_preconstrain=args.txpreconstrain,
-            )
+        rl_mode = False
+
+        if policy == "rl":
+            rl_mode = True
+            max_iterations = 20
+        if not rl_mode:
+            with m.kill_timeout():
+                m.multi_tx_analysis(
+                    args.argv[0],
+                    contract_name=args.contract,
+                    tx_limit=args.txlimit,
+                    tx_use_coverage=not args.txnocoverage,
+                    tx_send_ether=not args.txnoether,
+                    tx_account=args.txaccount,
+                    tx_preconstrain=args.txpreconstrain,
+                )
+        else:
+            for i in range(max_iterations):
+                logger.info("iteration %d" % (i + 1))
+                m.multi_tx_analysis(
+                    args.argv[0],
+                    contract_name=args.contract,
+                    tx_limit=args.txlimit,
+                    tx_use_coverage=not args.txnocoverage,
+                    tx_send_ether=not args.txnoether,
+                    tx_account=args.txaccount,
+                    tx_preconstrain=args.txpreconstrain,
+                )
+                branch_dict = m._shared_context["branch_dict"]
+                gas_dict = m._shared_context["gas_dict"]
+                policy_dict = process_policy(branch_dict, gas_dict)
+                if i != max_iterations - 1:
+                    m = ManticoreEVM(workspace_url=args.workspace, policy=policy, policy_dict=policy_dict)
 
         if not args.no_testcases:
             m.finalize()
@@ -122,3 +145,12 @@ def ethereum_main(args, logger):
 
         for plugin in list(m.plugins):
             m.unregister_plugin(plugin)
+
+def process_policy(branch_dict, gas_dict):
+    result_dict = dict()
+    for (key, value) in branch_dict.items():
+        if value in gas_dict:
+            result_dict[key] = gas_dict[value]
+        else:
+            result_dict[key] = 0.0
+    return result_dict

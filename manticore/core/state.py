@@ -38,7 +38,7 @@ class Concretize(StateException):
 
     """
 
-    _ValidPolicies = ["MINMAX", "ALL", "SAMPLED", "ONE"]
+    _ValidPolicies = ["MINMAX", "ALL", "SAMPLED", "ONE", "RL", "MCTS"]
 
     def __init__(self, message, expression, setstate=None, policy=None, **kwargs):
         if policy is None:
@@ -75,7 +75,7 @@ class StateBase(Eventful):
     :ivar dict context: Local context for arbitrary data storage
     """
 
-    def __init__(self, constraints, platform, probability=1.0, consumption=0.0, **kwargs):
+    def __init__(self, constraints, platform, probability=1.0, consumption=0.0, parent_constraints="Initial", chosen_value="", **kwargs):
         super().__init__(**kwargs)
         self._platform = platform
         self._constraints = constraints
@@ -85,6 +85,9 @@ class StateBase(Eventful):
         self._input_symbols = list()
         self._child = None
         self._context = dict()
+        self._parent_constraints = parent_constraints
+        self._addt_gas = 0.0
+        self._chosen_value = chosen_value
         # 33
         # Events are lost in serialization and fork !!
         self.forward_events_from(platform)
@@ -98,6 +101,9 @@ class StateBase(Eventful):
         state["context"] = self._context
         state["probability"] = self._probability
         state["consumption"] = self._consumption
+        state["parent_constraints"] = self._parent_constraints
+        state["addt_gas"] = self._addt_gas
+        state["chosen_value"] = self._chosen_value
         return state
 
     def __setstate__(self, state):
@@ -109,6 +115,9 @@ class StateBase(Eventful):
         self._context = state["context"]
         self._probability = state["probability"]
         self._consumption = state["consumption"]
+        self._parent_constraints = state["parent_constraints"]
+        self._addt_gas = state["addt_gas"]
+        self._chosen_value = state["chosen_value"]
         # 33
         # Events are lost in serialization and fork !!
         self.forward_events_from(self._platform)
@@ -132,6 +141,9 @@ class StateBase(Eventful):
         new_state._id = None
         new_state._probability = self.probability
         new_state._consumption = self.consumption
+        new_state._parent_constraints = self._parent_constraints
+        new_state._addt_gas = 0.0
+        new_state._chosen_value = self._chosen_value
         self.copy_eventful_state(new_state)
 
         self._child = new_state
@@ -187,8 +199,27 @@ class StateBase(Eventful):
     def consumption(self):
         return self._consumption
 
+    @property
+    def parent_constraints(self):
+        return self._parent_constraints
+
+    def set_parent_constraints(self, parent_constraints):
+        self._parent_constraints = parent_constraints
+
+    def set_chosen_value(self, chosen_value):
+        self._chosen_value = chosen_value
+
+    @property
+    def chosen_value(self):
+        return self._chosen_value
+
+    @property
+    def addt_gas(self):
+        return self._addt_gas
+
     def consume(self, fee):
         self._consumption += fee
+        self._addt_gas += fee
 
     def abandon(self):
         """Abandon the currently-active state.
@@ -288,7 +319,9 @@ class StateBase(Eventful):
         elif policy == "ONE":
             vals = [self._solver.get_value(self._constraints, symbolic)]
         elif policy == "RL":
-            vals = []
+            vals = self._solver.get_all_values(
+                self._constraints, symbolic, maxcnt=maxcount, silent=True
+            )
         elif policy == "MCTS":
             vals = []
         else:

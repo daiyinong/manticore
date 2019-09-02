@@ -8,6 +8,7 @@ import weakref
 from contextlib import contextmanager
 
 import functools
+import hashlib
 import shlex
 
 from ..core.plugin import Plugin
@@ -26,6 +27,7 @@ from multiprocessing.managers import SyncManager
 import threading
 import ctypes
 import signal
+import random
 from enum import Enum
 
 
@@ -287,11 +289,13 @@ class ManticoreBase(Eventful):
         # Workers will use manticore __dict__ So lets spawn them last
         self._workers = [self._worker_type(id=i, manticore=self) for i in range(consts.procs)]
         self._is_main = True
+        self._policy = policy
+        self._branch_dict = dict()
 
     def __str__(self):
         return f"<{str(type(self))[8:-2]}| Alive States: {self.count_ready_states()}; Running States: {self.count_busy_states()} Terminated States: {self.count_terminated_states()} Killed States: {self.count_killed_states()} Started: {self._running.value} Killed: {self._killed.value}>"
 
-    def _fork(self, state, expression, policy="ALL", setstate=None):
+    def _fork(self, state, expression, policy="ONE", setstate=None):
         """
         Fork state on expression concretizations.
         Using policy build a list of solutions for expression.
@@ -315,6 +319,9 @@ class ManticoreBase(Eventful):
         """
         assert isinstance(expression, Expression)
 
+        if self._policy == "rl":
+            policy = "RL"
+
         if setstate is None:
 
             def setstate(x, y):
@@ -334,6 +341,9 @@ class ManticoreBase(Eventful):
 
         # Build and enqueue a state for each solution
         children = []
+        dict_key = hashlib.sha1(str(state._constraints.constraints).encode('utf-8')).hexdigest()
+        if policy == "RL" and hasattr(self, "policy_dict"):
+            solutions = self._rl_process(dict_key, solutions, self.policy_dict)
         for new_value in solutions:
             with state as new_state:
                 new_state.constrain(expression == new_value)
@@ -348,6 +358,12 @@ class ManticoreBase(Eventful):
                     self._ready_states.append(new_state_id)
                     self._lock.notify_all()  # Must notify one!
 
+                new_value_str = str(new_value)
+                new_state.set_parent_constraints(dict_key)
+                new_state.set_chosen_value(new_value_str)
+                with self.locked_context('branch_dict', dict) as branch_dict:
+                    branch_dict[(dict_key, new_value)] = new_state_id
+
                 self._publish("did_fork_state", new_state, expression, new_value, policy)
                 # maintain a list of children for logging purpose
                 children.append(new_state_id)
@@ -359,6 +375,28 @@ class ManticoreBase(Eventful):
             self._lock.notify_all()
 
         logger.debug("Forking current state %r into states %r", state.id, children)
+
+    def _rl_process(self, dict_key, solutions, policy_dict, epsilon=0.2):
+        new_solutions = []
+        prob = random.random()
+        if prob <= epsilon or policy_dict is None or not policy_dict:
+            i = random.randint(0, len(solutions) - 1)
+            new_solutions.append(solutions[i])
+        else:
+            max = -1
+            max_solution = None
+            for s in solutions:
+                if (dict_key, s) in policy_dict:
+                    value = policy_dict[(dict_key, s)]
+                    if value > max:
+                        max = value
+                        max_solution = s
+            if not max_solution is None:
+                new_solutions.append(max_solution)
+        if new_solutions:
+            return new_solutions
+        else:
+            return solutions
 
     @staticmethod
     def verbosity(level):
@@ -646,8 +684,8 @@ class ManticoreBase(Eventful):
         for p in self.plugins:
             p.generate_testcase(state, testcase, message)
 
-        logger.info("Generated testcase No. %d - %s, probability: %g, consumption: %d", testcase.num, message,
-                    state.probability, state.consumption)
+        logger.info("Generated testcase No. %d - %s, consumption: %d", testcase.num, message,
+                    state.consumption)
 
         return testcase
 
