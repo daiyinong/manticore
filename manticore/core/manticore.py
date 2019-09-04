@@ -376,7 +376,7 @@ class ManticoreBase(Eventful):
 
         logger.debug("Forking current state %r into states %r", state.id, children)
 
-    def _rl_process(self, dict_key, solutions, policy_dict, epsilon=0.2):
+    def _rl_process(self, dict_key, solutions, policy_dict, epsilon=0.25):
         new_solutions = []
         prob = random.random()
         if prob <= epsilon or policy_dict is None or not policy_dict:
@@ -384,15 +384,12 @@ class ManticoreBase(Eventful):
             new_solutions.append(solutions[i])
         else:
             max = -1
-            max_solution = None
             for s in solutions:
                 if (dict_key, s) in policy_dict:
                     value = policy_dict[(dict_key, s)]
-                    if value > max:
+                    if value >= max:
                         max = value
-                        max_solution = s
-            if not max_solution is None:
-                new_solutions.append(max_solution)
+                        new_solutions.append(s)
         if new_solutions:
             return new_solutions
         else:

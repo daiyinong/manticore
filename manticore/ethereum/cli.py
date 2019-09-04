@@ -101,7 +101,7 @@ def ethereum_main(args, logger):
 
         if policy == "rl":
             rl_mode = True
-            max_iterations = 20
+            max_iterations = 10
         if not rl_mode:
             with m.kill_timeout():
                 m.multi_tx_analysis(

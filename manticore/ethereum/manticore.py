@@ -1694,7 +1694,7 @@ class ManticoreEVM(ManticoreBase):
             try:
                 probabilities = [p / sum(probabilities) for p in probabilities]
             except ZeroDivisionError:
-                probabilities = [1.0]
+                probabilities = [1.0/len(states)] * len(states)
             for i in range(len(state_ids)):
                 global_summary.write("state %s: probability %s, gas consumption %s\n" % (state_ids[i], probabilities[i], consumptions[i]))
             probabilities = tuple(probabilities)
