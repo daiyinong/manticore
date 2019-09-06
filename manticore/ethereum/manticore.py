@@ -1697,15 +1697,15 @@ class ManticoreEVM(ManticoreBase):
                 consumptions.append(state.consumption)
                 probabilities.append(state.probability)
             try:
-                probabilities = [p / sum(probabilities) for p in probabilities]
+                norm_probabilities = [p / sum(probabilities) for p in probabilities]
             except ZeroDivisionError:
-                probabilities = [1.0/len(states)] * len(states)
+                norm_probabilities = [1.0/len(states)] * len(states)
             for i in range(len(state_ids)):
                 global_summary.write("state %s: probability %s, gas consumption %s\n" % (state_ids[i], probabilities[i], consumptions[i]))
-            probabilities = tuple(probabilities)
+            norm_probabilities = tuple(norm_probabilities)
             consumptions = tuple(consumptions)
 
-            dist = stats.rv_discrete(name='dist', values=(consumptions, probabilities))
+            dist = stats.rv_discrete(name='dist', values=(consumptions, norm_probabilities))
 
             logger.info("Mean consumption: " + str(dist.mean(100)))
             logger.info("Consumption standard variation: " + str(dist.std(100)))
@@ -1723,7 +1723,7 @@ class ManticoreEVM(ManticoreBase):
             global_summary.write("\n")
             global_summary.write("Consumption standard variation: " + str(dist.std(100)))
             global_summary.write("\n")
-            global_summary.write("Max consumptionn: " + str(dist.b))
+            global_summary.write("Max consumption: " + str(dist.b))
 
         for address, md in self.metadata.items():
             with self._output.save_stream("global_%s.sol" % md.name) as global_src:

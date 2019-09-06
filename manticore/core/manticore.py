@@ -386,7 +386,7 @@ class ManticoreBase(Eventful):
 
         logger.debug("Forking current state %r into states %r", state.id, children)
 
-    def _rl_process(self, dict_key, solutions, policy_dict, epsilon=0.25):
+    def _rl_process(self, dict_key, solutions, policy_dict, epsilon=0.4):
         new_solutions = []
         prob = random.random()
         if prob <= epsilon or policy_dict is None or not policy_dict:
