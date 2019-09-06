@@ -286,7 +286,7 @@ class StateBase(Eventful):
         self._input_symbols.append(expr)
         return expr
 
-    def concretize(self, symbolic, policy, maxcount=7):
+    def concretize(self, symbolic, policy, maxcount=7, mcts_mode=False):
         """ This finds a set of solutions for symbolic using policy.
             This raises TooManySolutions if more solutions than maxcount
         """
@@ -323,7 +323,7 @@ class StateBase(Eventful):
                 self._constraints, symbolic, maxcnt=maxcount, silent=True
             )
         elif policy == "MCTS":
-            vals = []
+            vals = [self._solver.get_value(self._constraints, symbolic)]
         else:
             assert policy == "ALL"
             vals = self._solver.get_all_values(

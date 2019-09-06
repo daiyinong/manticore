@@ -910,8 +910,8 @@ class TranslatorIsl(Translator):
         BoolEq: "=",
         BoolAnd: "and",
         BoolOr: "or",
-        BoolXor: "^",
-        BoolITE: "blite",
+        BoolXor: "bitops",
+        BoolITE: "bitops",
         BitVecAdd: "+",
         BitVecSub: "-",
         BitVecMul: "*",
@@ -920,14 +920,14 @@ class TranslatorIsl(Translator):
         BitVecMod: "%",
         BitVecRem: "%",
         BitVecUnsignedRem: "%",
-        BitVecShiftLeft: "bitops",
-        BitVecShiftRight: "bitops",
-        BitVecArithmeticShiftLeft: "bitops",
-        BitVecArithmeticShiftRight: "bitops",
-        BitVecAnd: "+",
-        BitVecOr: "-",
-        BitVecXor: "-",
-        BitVecNot: "!",
+        BitVecShiftLeft: "*",
+        BitVecShiftRight: "/",
+        BitVecArithmeticShiftLeft: "*",
+        BitVecArithmeticShiftRight: "/",
+        BitVecAnd: "bitops",
+        BitVecOr: "bitops",
+        BitVecXor: "bitops",
+        BitVecNot: "bitops",
         BitVecNeg: "-",
         LessThan: "<",
         LessOrEqual: "<=",
@@ -942,10 +942,10 @@ class TranslatorIsl(Translator):
         BitVecSignExtend: "bitops",
         BitVecZeroExtend: "bitops",
         BitVecExtract: "bitops",
-        BitVecConcat: "concat",
-        BitVecITE: "bvite",
-        ArrayStore: "store",
-        ArraySelect: "select",
+        BitVecConcat: "bitops",
+        BitVecITE: "bitops",
+        ArrayStore: "bitops",
+        ArraySelect: "bitops",
     }
 
     def visit_BitVecConstant(self, expression):
@@ -1009,7 +1009,11 @@ class TranslatorIsl(Translator):
             operation = operation % expression.extend
         elif isinstance(expression, BitVecExtract):
             operation = operation % (expression.end, expression.begining)
-
+        elif isinstance(expression, BitVecShiftLeft) or \
+            isinstance(expression, BitVecShiftRight) or \
+            isinstance(expression, BitVecArithmeticShiftLeft) or \
+            isinstance(expression, BitVecArithmeticShiftRight):
+            operands = (operands[0],"(2 ^" + operands[1] + ")")
         try:
             operands = [self._add_binding(*x) for x in zip(expression.operands, operands)]
             if len(operands) == 2:

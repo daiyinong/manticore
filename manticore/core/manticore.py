@@ -290,12 +290,13 @@ class ManticoreBase(Eventful):
         self._workers = [self._worker_type(id=i, manticore=self) for i in range(consts.procs)]
         self._is_main = True
         self._policy = policy
+        self._mcts_mode = False
         self._branch_dict = dict()
 
     def __str__(self):
         return f"<{str(type(self))[8:-2]}| Alive States: {self.count_ready_states()}; Running States: {self.count_busy_states()} Terminated States: {self.count_terminated_states()} Killed States: {self.count_killed_states()} Started: {self._running.value} Killed: {self._killed.value}>"
 
-    def _fork(self, state, expression, policy="ONE", setstate=None):
+    def _fork(self, state, expression, policy="ALL", setstate=None):
         """
         Fork state on expression concretizations.
         Using policy build a list of solutions for expression.
@@ -321,6 +322,9 @@ class ManticoreBase(Eventful):
 
         if self._policy == "rl":
             policy = "RL"
+        if self._policy == "MCTS" and not self._mcts_mode:
+            policy = "ALL"
+            self._mcts_mode = True
 
         if setstate is None:
 
@@ -363,6 +367,12 @@ class ManticoreBase(Eventful):
                 new_state.set_chosen_value(new_value_str)
                 with self.locked_context('branch_dict', dict) as branch_dict:
                     branch_dict[(dict_key, new_value)] = new_state_id
+                if policy == "MCTS":
+                    with self.locked_context('root_dict', dict) as root:
+                        if self._mcts_mode:
+                            root[new_state_id] = root[state.id]
+                        else:
+                            root[new_state_id] = state.id
 
                 self._publish("did_fork_state", new_state, expression, new_value, policy)
                 # maintain a list of children for logging purpose
@@ -394,6 +404,19 @@ class ManticoreBase(Eventful):
             return new_solutions
         else:
             return solutions
+
+    def _mcts_process(self, dict_key, solutions, policy_dict):
+        new_solutions = []
+        max = -1
+        for s in solutions:
+            if (dict_key, s) in policy_dict:
+                value = policy_dict[(dict_key, s)]
+                if value >= max:
+                    max = value
+                    new_solutions.append(s)
+            else:
+                new_solutions.append(s)
+        return new_solutions
 
     @staticmethod
     def verbosity(level):
@@ -543,6 +566,11 @@ class ManticoreBase(Eventful):
         else:
             # add the state_id to the terminated list
             self._terminated_states.append(state_id)
+
+        if self._policy == "MCTS":
+            with self.locked_context('root_dict', dict) as root:
+                if(state_id in root):
+                    self._ready_states.append(root[state_id])
 
         # wake up everyone waiting for a change in the state lists
         self._lock.notify_all()

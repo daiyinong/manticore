@@ -1340,7 +1340,12 @@ class ManticoreEVM(ManticoreBase):
         e.testcase = False  # Do not generate a testcase file
 
         with self.locked_context('gas_dict', dict) as gas_dict:
-            gas_dict[state.id] = state.addt_gas
+            if state.id in gas_dict:
+                gas_dict[state.id] = gas_dict[state.id] + 0.2 * (state.addt_gas - gas_dict[state.id])
+            else:
+                gas_dict[state.id] = state.addt_gas
+
+        self._mcts_mode = False
 
         if not world.all_transactions:
             logger.debug("Something went wrong: search terminated in the middle of an ongoing tx")
@@ -1704,6 +1709,7 @@ class ManticoreEVM(ManticoreBase):
 
             logger.info("Mean consumption: " + str(dist.mean(100)))
             logger.info("Consumption standard variation: " + str(dist.std(100)))
+            logger.info("Max consumptionn: " + str(dist.b))
 
             fig, ax = plt.subplots(1, 1)
             ax.plot(consumptions, dist.pmf(consumptions), 'ro', ms=12, mec='r')
@@ -1714,7 +1720,10 @@ class ManticoreEVM(ManticoreBase):
             plt.show()
 
             global_summary.write("Mean consumption: " + str(dist.mean(100)))
+            global_summary.write("\n")
             global_summary.write("Consumption standard variation: " + str(dist.std(100)))
+            global_summary.write("\n")
+            global_summary.write("Max consumptionn: " + str(dist.b))
 
         for address, md in self.metadata.items():
             with self._output.save_stream("global_%s.sol" % md.name) as global_src:
