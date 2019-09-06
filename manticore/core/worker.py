@@ -110,7 +110,8 @@ class Worker:
                         logger.debug("[%r] Running", self.id)
                         assert (
                             current_state.id in m._busy_states
-                            and current_state.id not in m._ready_states
+                            and (current_state.id not in m._ready_states
+                                 or m._policy == "mcts")
                         )
 
                         # This does not hold the lock so we may loss some event

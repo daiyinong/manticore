@@ -1339,13 +1339,17 @@ class ManticoreEVM(ManticoreBase):
         state.context["last_exception"] = e
         e.testcase = False  # Do not generate a testcase file
 
-        with self.locked_context('gas_dict', dict) as gas_dict:
-            if state.id in gas_dict:
-                gas_dict[state.id] = gas_dict[state.id] + 0.2 * (state.addt_gas - gas_dict[state.id])
-            else:
-                gas_dict[state.id] = state.addt_gas
-
-        self._mcts_mode = False
+        if self._policy == "rl":
+            with self.locked_context('gas_dict', dict) as gas_dict:
+                if state.id in gas_dict:
+                    gas_dict[state.id] = gas_dict[state.id] + 0.2 * (state.addt_gas - gas_dict[state.id])
+                else:
+                    gas_dict[state.id] = state.addt_gas
+        if self._policy == "mcts":
+            with self.locked_context('playout', dict) as playoutDict:
+                playoutDict['enabled'] = False
+            with self.locked_context('explored_states', list) as explored:
+                explored.append(state.id)
 
         if not world.all_transactions:
             logger.debug("Something went wrong: search terminated in the middle of an ongoing tx")

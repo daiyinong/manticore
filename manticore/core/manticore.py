@@ -322,9 +322,12 @@ class ManticoreBase(Eventful):
 
         if self._policy == "rl":
             policy = "RL"
-        if self._policy == "MCTS" and not self._mcts_mode:
-            policy = "ALL"
-            self._mcts_mode = True
+        with self.locked_context('playout', dict) as playoutDict:
+            if self._policy == "mcts" and ('enabled' not in playoutDict or not playoutDict['enabled']):
+                policy = "ALL"
+                playoutDict['enabled'] = True
+            elif self._policy == "mcts" and 'enabled' in playoutDict and playoutDict['enabled']:
+                policy = "MCTS"
 
         if setstate is None:
 
@@ -367,9 +370,9 @@ class ManticoreBase(Eventful):
                 new_state.set_chosen_value(new_value_str)
                 with self.locked_context('branch_dict', dict) as branch_dict:
                     branch_dict[(dict_key, new_value)] = new_state_id
-                if policy == "MCTS":
+                if self._policy == "mcts":
                     with self.locked_context('root_dict', dict) as root:
-                        if self._mcts_mode:
+                        if policy == "MCTS" and state.id in root:
                             root[new_state_id] = root[state.id]
                         else:
                             root[new_state_id] = state.id
@@ -380,7 +383,8 @@ class ManticoreBase(Eventful):
 
         with self._lock:
             self._busy_states.remove(state.id)
-            self._remove(state.id)
+            if self._policy != "mcts":
+                self._remove(state.id)
             state._id = None
             self._lock.notify_all()
 
